@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project } from './types';
 import DatabaseViewer from './DatabaseViewer';
+import ProjectDetail from './components/ProjectDetail';
 import './App.css';
 
 const App: React.FC = () => {
@@ -59,6 +60,7 @@ const App: React.FC = () => {
 
   const handleProjectClick = (project: Project) => {
     setSelectedProject(project);
+    setShowDbViewer(false);
   };
 
   const handleBackToProjects = () => {
@@ -72,7 +74,8 @@ const App: React.FC = () => {
 
   return (
     <>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
         <div className="bg-white border-b border-gray-200">
           <div className="px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -80,12 +83,17 @@ const App: React.FC = () => {
                 onClick={handleGoHome}
                 className="text-lg font-semibold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
               >
-                My Electron App
+                Valuation Agent
               </h1>
               {selectedProject && (
                 <>
                   <span className="text-gray-400">/</span>
                   <span className="text-sm text-gray-700">{selectedProject.name}</span>
+                  {selectedProject.final_valuation && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      (${selectedProject.final_valuation.toLocaleString()})
+                    </span>
+                  )}
                 </>
               )}
               {showDbViewer && (
@@ -96,13 +104,21 @@ const App: React.FC = () => {
               )}
             </div>
             <div className="flex gap-2">
+              {selectedProject && (
+                <button
+                  onClick={handleBackToProjects}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 transition-colors"
+                >
+                  ← Projects
+                </button>
+              )}
               <button
                 onClick={() => setShowDbViewer(true)}
                 className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700 transition-colors"
               >
                 Database
               </button>
-              {!showDbViewer && !selectedProject && (
+              {!selectedProject && !showDbViewer && (
                 <button
                   onClick={() => setShowCreateDialog(true)}
                   className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
@@ -114,21 +130,20 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <DatabaseViewer isOpen={showDbViewer} onClose={() => setShowDbViewer(false)} />
+        {/* Database Viewer */}
+        {showDbViewer && <DatabaseViewer isOpen={showDbViewer} onClose={() => setShowDbViewer(false)} />}
 
         {!showDbViewer && (
-          <div className="p-4">
+          <>
             {selectedProject ? (
-              // Project Detail View
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h2 className="text-2xl font-bold text-gray-900">{selectedProject.name}</h2>
-                {selectedProject.description && (
-                  <p className="text-gray-600 mt-2">{selectedProject.description}</p>
-                )}
-              </div>
+              // Project Detail View - Split Screen Layout
+              <ProjectDetail
+                project={selectedProject}
+                onBack={handleBackToProjects}
+              />
             ) : (
               // Project List View
-              <>
+              <div className="p-4">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-gray-500">Loading...</div>
@@ -164,9 +179,9 @@ const App: React.FC = () => {
                     ))}
                   </div>
                 )}
-              </>
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Create Project Dialog */}

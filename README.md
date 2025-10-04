@@ -1,48 +1,221 @@
-# Electron + Vite + React + SQLite Template
+# Valuation Agent
 
-A modern Electron application template with Vite, React 19, TypeScript, Tailwind CSS, and SQLite database integration.
+A desktop application for financial valuations powered by Claude AI with built-in code execution.
 
 ## Features
 
-- ⚡ **Vite** - Fast development server and build tool
-- ⚛️ **React 19** - Latest React with hooks
-- 🔷 **TypeScript** - Type-safe code
-- 🎨 **Tailwind CSS** - Utility-first CSS framework
-- 🗄️ **SQLite** - Embedded database with better-sqlite3
-- 📦 **Electron** - Cross-platform desktop app framework
+- **AI-Powered Valuations**: Conversational interface with Claude AI agent
+- **Built-in Code Execution**: Python/JavaScript calculations run securely in sandbox
+- **Multiple Valuation Methods**: DCF, Comparables, Precedent Transactions, Asset-Based
+- **Interactive Analysis**: Ask questions and explore scenarios with the AI
+- **Local Database**: All data stored locally in SQLite
 
-## Prerequisites
+## Architecture
 
-- Node.js (v18 or higher recommended)
-- npm or yarn
-
-## Getting Started
-
-### 1. Clone or fork this repository
-
-```bash
-git clone <your-repo-url>
-cd template-electron-vite
+```
+Electron Desktop App
+├── React Frontend (TypeScript)
+├── Main Process (Node.js)
+│   ├── Database (SQLite)
+│   └── Claude Agent SDK
+│       └── Built-in Code Execution Sandbox
+└── Claude API
 ```
 
-### 2. Install dependencies
+**No external services required** - Everything runs locally except Claude API calls.
+
+## Setup
+
+### Prerequisites
+- Node.js 18+
+- Anthropic API key ([get one here](https://console.anthropic.com))
+
+### Installation
 
 ```bash
+# Install dependencies
 npm install
+
+# Configure API key
+cp .env.example .env
+# Edit .env and add your ANTHROPIC_API_KEY
 ```
 
-This will automatically rebuild native modules (like better-sqlite3) for Electron via the postinstall script.
-
-### 3. Run the development server
+### Development
 
 ```bash
+# Run in development mode
 npm run electron:dev
 ```
 
 This will:
-- Start the Vite dev server on http://localhost:5173
-- Launch the Electron app with DevTools open
-- Enable hot module replacement for React components
+1. Start Vite dev server (http://localhost:5173)
+2. Launch Electron with hot reload
+3. Open DevTools automatically
+
+### Production Build
+
+```bash
+# Build and package
+npm run dist
+```
+
+Creates distributable packages in `dist/` folder.
+
+## How It Works
+
+### 1. Create a Project
+- Name your valuation project
+- Add investment type, description, etc.
+
+### 2. Configure Valuation Methods
+- Choose methods (DCF, Comps, etc.)
+- Input parameters (cash flows, multiples, etc.)
+- Set weights for each method
+
+### 3. Run Agent Valuation
+Click "🤖 Agent Valuation" to start conversation with Claude:
+- Agent introduces itself and reviews your data
+- Creates a valuation plan for approval
+- Executes calculations step-by-step with explanations
+- Presents final results with breakdown
+
+### 4. Interactive Analysis
+- Ask follow-up questions
+- Request scenario analysis
+- Get explanations of assumptions
+- Explore sensitivity to inputs
+
+## Agent Capabilities
+
+The Claude agent can:
+- **Execute Code**: Run Python/JS calculations in secure sandbox
+- **Explain Reasoning**: Show work step-by-step
+- **Ask Questions**: Clarify unclear inputs
+- **Provide Insights**: Highlight key drivers and risks
+- **Compare Methods**: Explain differences between DCF and Comps
+
+Example conversation:
+```
+User: Run a valuation for this SaaS company
+
+Agent: I'll create a DCF and Comparables analysis.
+       For DCF, I'll project cash flows with 30% growth...
+       [executes code]
+       NPV = $5.2M
+
+User: What if growth is only 20%?
+
+Agent: Let me recalculate with 20% growth...
+       [executes code]
+       NPV = $3.8M (27% lower)
+```
+
+## Tech Stack
+
+- **Frontend**: React 19 + TypeScript + Tailwind CSS
+- **Desktop**: Electron
+- **Database**: better-sqlite3
+- **AI**: Claude Agent SDK with code execution
+- **Charts**: Recharts
+
+## Project Structure
+
+```
+valuation-agent/
+├── src/
+│   ├── components/          # React components
+│   │   └── ProjectDetail.tsx
+│   ├── services/
+│   │   └── valuationAgent.ts  # Claude Agent SDK integration
+│   ├── database.js          # SQLite manager
+│   ├── types.ts             # TypeScript types
+│   └── App.tsx              # Main React app
+├── main.js                  # Electron main process
+├── preload.js               # IPC bridge
+└── .env                     # API keys (gitignored)
+```
+
+## Database Schema
+
+- `projects` - Valuation projects
+- `methods` - Valuation methods per project
+- `metrics` - Input parameters per method
+- `valuation_methods` - Method metadata
+- `input_parameters` - Parameter definitions
+- `computation_history` - Execution logs
+
+## Configuration
+
+### Environment Variables
+
+Create `.env` in project root:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
+
+### Claude Agent Settings
+
+Edit `src/services/valuationAgent.ts` to customize:
+- System prompt (agent personality)
+- Code execution timeout
+- Response streaming behavior
+
+## Development Notes
+
+### TypeScript Support
+
+The project uses `ts-node` to load TypeScript files in Electron's main process:
+- `src/services/valuationAgent.ts` is loaded directly
+- No separate build step needed for development
+- Production builds compile to JS
+
+### IPC Architecture
+
+Communication flow:
+```
+React → preload.js → main.js → valuationAgent.ts → Claude API
+                                     ↓
+                              Code Execution Sandbox
+```
+
+All IPC calls are type-safe via `src/types.ts`.
+
+## Troubleshooting
+
+### "ANTHROPIC_API_KEY not configured"
+- Ensure `.env` file exists in project root
+- Check API key format: `sk-ant-...`
+- Restart app after editing `.env`
+
+### TypeScript errors in main process
+- Run `npm install` to ensure ts-node is installed
+- Check `tsconfig.json` is present
+
+### Native Module Issues
+
+If you encounter issues with better-sqlite3:
+
+```bash
+npm run postinstall
+# or
+npx electron-rebuild
+```
+
+### Agent not responding
+- Check console for errors
+- Verify API key is valid
+- Ensure internet connection for Claude API
+
+## Cost Estimates
+
+**Typical valuation conversation:**
+- Input: ~2,000 tokens (project data + prompts)
+- Output: ~3,000 tokens (explanations + code)
+- Cost: ~$0.15 - 0.50 per valuation
+
+Code execution is **free** (runs locally in sandbox).
 
 ## Available Scripts
 
@@ -50,92 +223,7 @@ This will:
 - `npm run electron:dev` - Start both Vite and Electron in development mode
 - `npm run build` - Build the app for production
 - `npm run dist` - Build and package the app with electron-builder
-
-## Project Structure
-
-```
-.
-├── src/                    # React application source
-│   ├── App.tsx            # Main React component
-│   ├── main.tsx           # React entry point
-│   └── database.ts        # SQLite database setup
-├── main.js                # Electron main process
-├── preload.js             # Electron preload script
-├── index.html             # HTML entry point
-├── vite.config.ts         # Vite configuration
-├── tailwind.config.js     # Tailwind CSS configuration
-└── tsconfig.json          # TypeScript configuration
-```
-
-## Database
-
-The template includes better-sqlite3 for SQLite integration. The database is initialized in `src/database.ts` with a sample `projects` table.
-
-### IPC Handlers
-
-The following IPC handlers are available:
-
-- `projects:getAll` - Get all projects
-- `projects:create` - Create a new project
-- `projects:get` - Get a specific project by ID
-
-## Customization
-
-### Rename the Project
-
-Update the `name` field in `package.json`:
-
-```json
-{
-  "name": "your-app-name"
-}
-```
-
-### Add More Database Tables
-
-Edit `src/database.ts` to add more tables in the `init()` function.
-
-### Configure Electron Window
-
-Edit `main.js` to customize window properties, size, and behavior.
-
-## Troubleshooting
-
-### Native Module Issues
-
-If you encounter issues with better-sqlite3 or other native modules:
-
-```bash
-npm run postinstall
-```
-
-Or manually rebuild:
-
-```bash
-npx electron-rebuild
-```
-
-### Port Already in Use
-
-If port 5173 is in use, Vite will automatically try another port. Check the console output for the actual URL.
-
-## Building for Production
-
-### Build the App
-
-```bash
-npm run build
-```
-
-This compiles TypeScript and builds the React app to the `dist/` directory.
-
-### Create Distributable
-
-```bash
-npm run dist
-```
-
-This creates platform-specific distributables using electron-builder.
+- `npm run postinstall` - Rebuild native modules for Electron
 
 ## License
 
