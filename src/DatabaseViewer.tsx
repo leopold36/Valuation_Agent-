@@ -17,7 +17,7 @@ interface TableData {
 const DatabaseViewer: React.FC<DatabaseViewerProps> = ({ isOpen, onClose }) => {
   const [tableData, setTableData] = useState<TableData>({});
   const openStateRef = useRef<{ [key: string]: boolean }>({});
-  const VALID_TABLES = ['projects', 'methods', 'metrics'];
+  const VALID_TABLES = ['projects', 'methods', 'metrics', 'conversation_threads', 'conversation_messages'];
 
   const loadAllTables = useCallback(async () => {
     try {

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   threads: {
     getByProject: (projectId) => ipcRenderer.invoke('threads:getByProject', projectId),
+    getActiveThread: (projectId) => ipcRenderer.invoke('threads:getActiveThread', projectId),
     getMessages: (threadId) => ipcRenderer.invoke('threads:getMessages', threadId),
     archiveThread: (threadId) => ipcRenderer.invoke('threads:archiveThread', threadId),
     deleteThread: (threadId) => ipcRenderer.invoke('threads:deleteThread', threadId),

@@ -27,7 +27,38 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
   useEffect(() => {
     loadMethods();
+    loadConversationHistory();
   }, [project.id]);
+
+  const loadConversationHistory = async () => {
+    try {
+      // Check if there's an active thread for this project
+      const activeThread = await window.electronAPI.threads.getActiveThread(project.id);
+
+      if (activeThread) {
+        console.log('Loading conversation history from thread:', activeThread.id);
+
+        // Load messages from the thread
+        const dbMessages = await window.electronAPI.threads.getMessages(activeThread.id);
+
+        // Convert database messages to TerminalMessage format
+        const terminalMessages: TerminalMessage[] = dbMessages.map((msg: any) => ({
+          id: msg.id.toString(),
+          type: msg.type,
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+          metadata: msg.metadata ? JSON.parse(msg.metadata) : undefined
+        }));
+
+        setMessages(terminalMessages);
+        console.log(`Loaded ${terminalMessages.length} messages from conversation history`);
+      } else {
+        console.log('No active thread found for project', project.id);
+      }
+    } catch (error) {
+      console.error('Failed to load conversation history:', error);
+    }
+  };
 
   const loadMethods = async () => {
     try {
@@ -139,7 +170,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
   const handleRunAgentValuation = async () => {
     setIsExecuting(true);
-    setMessages([]);
+    // Don't clear messages - they will be loaded from database or preserved
 
     try {
       const agentResponse = await window.electronAPI.agent.startValuation(project.id);
@@ -231,20 +262,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Main Content - Split Screen */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* LEFT: Forms */}
-        <div className="w-1/2 p-3 overflow-y-auto bg-white border-r border-gray-200">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Valuation Methods</h2>
-            <button
-              onClick={saveData}
-              className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
-            >
-              💾 Save Data
-            </button>
-          </div>
+    <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* LEFT: Forms */}
+      <div className="w-1/2 p-3 overflow-y-auto bg-white border-r border-gray-200">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Valuation Methods</h2>
+          <button
+            onClick={saveData}
+            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+          >
+            💾 Save Data
+          </button>
+        </div>
 
           {/* DCF Form */}
           <div className="mb-3 p-2.5 border border-gray-200 rounded">
@@ -388,15 +417,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
         </div>
 
-        {/* RIGHT: Unified Agent Terminal */}
-        <div className="w-1/2">
-          <AgentTerminal
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isProcessing={isExecuting}
-            onStartAgent={handleRunAgentValuation}
-          />
-        </div>
+      {/* RIGHT: Unified Agent Terminal */}
+      <div className="w-1/2">
+        <AgentTerminal
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          isProcessing={isExecuting}
+          onStartAgent={handleRunAgentValuation}
+        />
       </div>
     </div>
   );

@@ -63,12 +63,87 @@ class ValuationAgentService {
   }
 
   /**
+   * Restore conversation from database
+   */
+  async restoreConversation(projectId: number, projectData: ProjectData): Promise<{ threadId: number; history: string[] } | null> {
+    if (!this.database) return null;
+
+    try {
+      // Check if there's an active thread for this project
+      const activeThread = this.database.getActiveThreadByProject(projectId);
+      if (!activeThread) {
+        console.log(`[ValuationAgent] No active thread found for project ${projectId}`);
+        return null;
+      }
+
+      console.log(`[ValuationAgent] Found active thread ${activeThread.id} for project ${projectId}`);
+
+      // Load messages from the thread
+      const messages = this.database.getMessagesByThread(activeThread.id);
+
+      // Rebuild conversation history from messages
+      const history: string[] = [];
+      for (const msg of messages) {
+        // Only include user and assistant_text messages in history
+        if (msg.type === 'user') {
+          history.push(`User: ${msg.content}`);
+        } else if (msg.type === 'assistant_text') {
+          history.push(`Assistant: ${msg.content}`);
+        }
+      }
+
+      console.log(`[ValuationAgent] Restored ${messages.length} messages (${history.length} in history) from thread ${activeThread.id}`);
+
+      return {
+        threadId: activeThread.id,
+        history
+      };
+    } catch (error) {
+      console.error('[ValuationAgent] Failed to restore conversation:', error);
+      return null;
+    }
+  }
+
+  /**
    * Start a new valuation conversation for a project
    */
   async startValuation(projectId: number, projectData: ProjectData): Promise<AgentResponse> {
     console.log(`[ValuationAgent] Starting valuation for project ${projectId}`);
 
-    // Create a new thread in the database
+    // Check if conversation already exists in memory
+    let conversation = this.conversations.get(projectId);
+
+    if (conversation) {
+      console.log(`[ValuationAgent] Conversation already exists in memory for project ${projectId}`);
+      // Return empty response - conversation already active
+      return {
+        messages: [],
+        done: true
+      };
+    }
+
+    // Try to restore from database
+    const restored = await this.restoreConversation(projectId, projectData);
+
+    if (restored) {
+      // Conversation exists in database, restore it
+      conversation = {
+        history: restored.history,
+        projectData,
+        threadId: restored.threadId
+      };
+      this.conversations.set(projectId, conversation);
+
+      console.log(`[ValuationAgent] Restored existing conversation for project ${projectId}`);
+
+      // Return empty response - messages are already loaded in UI from database
+      return {
+        messages: [],
+        done: true
+      };
+    }
+
+    // No existing conversation, create a new one
     let threadId: number | undefined;
     if (this.database) {
       try {
@@ -80,7 +155,7 @@ class ValuationAgentService {
       }
     }
 
-    const conversation = {
+    conversation = {
       history: [],
       projectData,
       threadId

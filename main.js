@@ -330,6 +330,15 @@ See .env.example for reference.
       }
     });
 
+    ipcMain.handle('threads:getActiveThread', async (_, projectId) => {
+      try {
+        return database.getActiveThreadByProject(projectId);
+      } catch (error) {
+        console.error('Failed to get active thread:', error);
+        throw error;
+      }
+    });
+
     ipcMain.handle('threads:getMessages', async (_, threadId) => {
       try {
         return database.getMessagesByThread(threadId);
