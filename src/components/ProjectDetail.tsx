@@ -13,6 +13,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   const [isExecuting, setIsExecuting] = useState(false);
   const [result, setResult] = useState<ValuationResult | null>(null);
 
+  // Split pane resize state
+  const [leftWidth, setLeftWidth] = useState(50); // percentage
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Track unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
   // DCF Form State
   const [cashFlows, setCashFlows] = useState<string>('100, 110, 121, 133, 146');
   const [discountRate, setDiscountRate] = useState<string>('0.10');
@@ -47,7 +54,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           type: msg.type,
           content: msg.content,
           timestamp: new Date(msg.created_at),
-          metadata: msg.metadata ? JSON.parse(msg.metadata) : undefined
+          metadata: msg.metadata
+            ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata)
+            : undefined
         }));
 
         setMessages(terminalMessages);
@@ -160,6 +169,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       await window.electronAPI.metrics.createBatch(compsMethod.id, compsMetrics);
 
       await loadMethods();
+      setHasUnsavedChanges(false);
       alert('Data saved successfully!');
     } catch (error: any) {
       console.error('Failed to save data:', error);
@@ -260,18 +270,59 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     setMessages(prev => [...prev, ...newMessages]);
   };
 
+  // Handle resizing
+  const handleMouseDown = () => {
+    setIsResizing(true);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isResizing) return;
+
+    const container = document.querySelector('.split-container') as HTMLElement;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+
+    // Constrain between 30% and 70%
+    const constrainedWidth = Math.min(Math.max(newWidth, 30), 70);
+    setLeftWidth(constrainedWidth);
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove as any);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove as any);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing]);
 
   return (
-    <div className="flex-1 flex overflow-hidden min-h-0">
+    <div className="flex-1 flex overflow-hidden min-h-0 split-container">
       {/* LEFT: Forms */}
-      <div className="w-1/2 p-3 overflow-y-auto bg-white border-r border-gray-200">
+      <div
+        className="p-3 overflow-y-auto bg-white border-r border-gray-200"
+        style={{ width: `${leftWidth}%` }}
+      >
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Valuation Methods</h2>
           <button
             onClick={saveData}
-            className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+            disabled={!hasUnsavedChanges}
+            className={`px-3 py-1 text-xs rounded transition-colors ${
+              hasUnsavedChanges
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+            }`}
           >
-            💾 Save Data
+            {hasUnsavedChanges ? 'Save Data' : 'Saved ✓'}
           </button>
         </div>
 
@@ -294,7 +345,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 <input
                   type="text"
                   value={cashFlows}
-                  onChange={(e) => setCashFlows(e.target.value)}
+                  onChange={(e) => { setCashFlows(e.target.value); setHasUnsavedChanges(true); }}
                   className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="100, 110, 121, 133, 146"
                 />
@@ -308,7 +359,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <input
                     type="text"
                     value={discountRate}
-                    onChange={(e) => setDiscountRate(e.target.value)}
+                    onChange={(e) => { setDiscountRate(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="0.10"
                   />
@@ -321,7 +372,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <input
                     type="text"
                     value={dcfWeight}
-                    onChange={(e) => setDcfWeight(e.target.value)}
+                    onChange={(e) => { setDcfWeight(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="0.6"
                   />
@@ -335,7 +386,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 <input
                   type="text"
                   value={terminalValue}
-                  onChange={(e) => setTerminalValue(e.target.value)}
+                  onChange={(e) => { setTerminalValue(e.target.value); setHasUnsavedChanges(true); }}
                   className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="1500"
                 />
@@ -362,7 +413,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   </label>
                   <select
                     value={metric}
-                    onChange={(e) => setMetric(e.target.value)}
+                    onChange={(e) => { setMetric(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
                     <option value="Revenue">Revenue</option>
@@ -379,7 +430,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <input
                     type="text"
                     value={multiple}
-                    onChange={(e) => setMultiple(e.target.value)}
+                    onChange={(e) => { setMultiple(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="5.0"
                   />
@@ -394,7 +445,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <input
                     type="text"
                     value={companyValue}
-                    onChange={(e) => setCompanyValue(e.target.value)}
+                    onChange={(e) => { setCompanyValue(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="100000000"
                   />
@@ -407,7 +458,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   <input
                     type="text"
                     value={compsWeight}
-                    onChange={(e) => setCompsWeight(e.target.value)}
+                    onChange={(e) => { setCompsWeight(e.target.value); setHasUnsavedChanges(true); }}
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                     placeholder="0.4"
                   />
@@ -417,8 +468,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </div>
         </div>
 
+      {/* DIVIDER */}
+      <div
+        className={`w-1 bg-gray-200 hover:bg-blue-500 cursor-col-resize transition-colors ${
+          isResizing ? 'bg-blue-500' : ''
+        }`}
+        onMouseDown={handleMouseDown}
+        style={{ flexShrink: 0 }}
+      />
+
       {/* RIGHT: Unified Agent Terminal */}
-      <div className="w-1/2">
+      <div
+        className="flex-1"
+        style={{ width: `${100 - leftWidth}%` }}
+      >
         <AgentTerminal
           messages={messages}
           onSendMessage={handleSendMessage}

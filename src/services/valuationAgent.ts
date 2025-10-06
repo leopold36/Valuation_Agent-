@@ -174,11 +174,39 @@ class ValuationAgentService {
   /**
    * Send a message to an ongoing conversation
    */
-  async sendMessage(projectId: number, message: string): Promise<AgentResponse> {
-    const conversation = this.conversations.get(projectId);
+  async sendMessage(projectId: number, message: string, projectData?: ProjectData): Promise<AgentResponse> {
+    let conversation = this.conversations.get(projectId);
 
+    // If no conversation in memory, try to restore from database
     if (!conversation) {
-      throw new Error(`No active conversation for project ${projectId}`);
+      console.log(`[ValuationAgent] No conversation in memory for project ${projectId}, attempting to restore...`);
+
+      // If no projectData provided, we can't restore - need it from the caller
+      if (!projectData) {
+        throw new Error(`No active conversation for project ${projectId} and no project data provided to restore it`);
+      }
+
+      const restored = await this.restoreConversation(projectId, projectData);
+
+      if (restored) {
+        // Conversation exists in database, restore it to memory
+        conversation = {
+          history: restored.history,
+          projectData,
+          threadId: restored.threadId
+        };
+        this.conversations.set(projectId, conversation);
+        console.log(`[ValuationAgent] Successfully restored conversation for project ${projectId}`);
+      } else {
+        // No conversation in database either, start a new one
+        console.log(`[ValuationAgent] No existing conversation found, starting new one for project ${projectId}`);
+        await this.startValuation(projectId, projectData);
+        conversation = this.conversations.get(projectId);
+
+        if (!conversation) {
+          throw new Error(`Failed to initialize conversation for project ${projectId}`);
+        }
+      }
     }
 
     console.log(`[ValuationAgent] Sending message to project ${projectId}:`, message);

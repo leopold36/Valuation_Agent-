@@ -24,7 +24,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   };
 
   return (
-    <div className="relative group my-2">
+    <div className="relative group my-2 max-w-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#1e1e1e] border border-gray-700 rounded-t">
         <div className="flex items-center gap-3">
@@ -51,7 +51,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       </div>
 
       {/* Code */}
-      <div className="border border-t-0 border-gray-700 rounded-b overflow-hidden">
+      <div className="border border-t-0 border-gray-700 rounded-b overflow-x-auto max-w-full">
         <SyntaxHighlighter
           language={language}
           style={vscDarkPlus}
@@ -61,6 +61,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
             fontSize: '13px',
             padding: '16px',
             background: '#1a1d23',
+            maxWidth: '100%',
           }}
           codeTagProps={{
             style: {
@@ -75,6 +76,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
             color: '#6e7681',
             userSelect: 'none'
           }}
+          wrapLongLines={false}
         >
           {code}
         </SyntaxHighlighter>

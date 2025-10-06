@@ -277,6 +277,8 @@ See .env.example for reference.
           metrics
         };
 
+        console.log('[IPC] Starting valuation with project data:', JSON.stringify(projectData, null, 2));
+
         // Start agent conversation with new SDK agent
         const response = await valuationAgent.startValuation(projectId, projectData);
 
@@ -295,7 +297,28 @@ See .env.example for reference.
 
     ipcMain.handle('agent:sendMessage', async (_, projectId, message) => {
       try {
-        const response = await valuationAgent.sendMessage(projectId, message);
+        // Gather project data (needed for auto-restore if conversation not in memory)
+        const project = database.getProject(projectId);
+        const methods = database.getMethodsByProject(projectId);
+        const metrics = [];
+        for (const method of methods) {
+          const methodMetrics = database.getMetricsByMethod(method.id);
+          metrics.push(...methodMetrics);
+        }
+
+        const projectData = {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          investment_type: project.investment_type,
+          status: project.status,
+          methods,
+          metrics
+        };
+
+        console.log('[IPC] Sending message with project data:', JSON.stringify(projectData, null, 2));
+
+        const response = await valuationAgent.sendMessage(projectId, message, projectData);
 
         return {
           success: true,
