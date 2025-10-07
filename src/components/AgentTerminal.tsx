@@ -7,13 +7,15 @@ interface AgentTerminalProps {
   onSendMessage: (message: string) => void;
   isProcessing: boolean;
   onStartAgent: () => void;
+  onSaveValuation?: (value: number) => void;
 }
 
 const AgentTerminal: React.FC<AgentTerminalProps> = ({
   messages,
   onSendMessage,
   isProcessing,
-  onStartAgent
+  onStartAgent,
+  onSaveValuation
 }) => {
   const [input, setInput] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -102,7 +104,7 @@ const AgentTerminal: React.FC<AgentTerminalProps> = ({
         ) : (
           <>
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble key={message.id} message={message} onSaveValuation={onSaveValuation} />
             ))}
             {isProcessing && (
               <div className="flex items-center gap-2 text-gray-500 text-sm py-2">

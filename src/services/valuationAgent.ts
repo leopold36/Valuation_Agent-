@@ -18,9 +18,10 @@ interface ProjectData {
 }
 
 interface AgentMessage {
-  type: 'text' | 'code' | 'result' | 'thinking';
+  type: 'text' | 'code' | 'result' | 'thinking' | 'tool_call' | 'executing' | 'valuation_result';
   content: string;
   metadata?: any;
+  timestamp?: Date;
 }
 
 interface AgentResponse {
@@ -288,6 +289,64 @@ class ValuationAgentService {
                   messages.push(msg);
                   this.persistMessage(threadId, 'assistant_text', block.text);
                   console.log('[ValuationAgent] Added text message:', block.text.substring(0, 100));
+
+                  // Check for FINAL_VALUATION marker
+                  const valuationMatch = block.text.match(/FINAL_VALUATION:\s*\$?([\d,]+)/i);
+                  if (valuationMatch) {
+                    const valuationValue = parseFloat(valuationMatch[1].replace(/,/g, ''));
+                    console.log('[ValuationAgent] Detected final valuation:', valuationValue);
+
+                    // Add a special valuation_result message
+                    const valuationMsg: AgentMessage = {
+                      type: 'valuation_result',
+                      content: 'Would you like to save this valuation to the database?',
+                      metadata: { valuationValue },
+                      timestamp: new Date()
+                    };
+                    messages.push(valuationMsg);
+                    this.persistMessage(threadId, 'valuation_result', valuationMsg.content, { valuationValue });
+                  }
+
+                  // Check for method-specific valuations (DCF_VALUE, COMPS_VALUE)
+                  const dcfMatch = block.text.match(/DCF[_\s](?:VALUE|VALUATION):\s*\$?([\d,]+)/i);
+                  if (dcfMatch) {
+                    const dcfValue = parseFloat(dcfMatch[1].replace(/,/g, ''));
+                    console.log('[ValuationAgent] Detected DCF valuation:', dcfValue);
+
+                    // Update DCF method in database
+                    if (this.database && projectId) {
+                      try {
+                        const methods = this.database.getMethodsByProject(projectId);
+                        const dcfMethod = methods.find((m: any) => m.method_type === 'DCF');
+                        if (dcfMethod) {
+                          this.database.updateMethod(dcfMethod.id, { calculated_value: dcfValue });
+                          console.log('[ValuationAgent] Updated DCF calculated value:', dcfValue);
+                        }
+                      } catch (error) {
+                        console.error('[ValuationAgent] Failed to update DCF value:', error);
+                      }
+                    }
+                  }
+
+                  const compsMatch = block.text.match(/COMPS?[_\s](?:VALUE|VALUATION):\s*\$?([\d,]+)/i);
+                  if (compsMatch) {
+                    const compsValue = parseFloat(compsMatch[1].replace(/,/g, ''));
+                    console.log('[ValuationAgent] Detected Comps valuation:', compsValue);
+
+                    // Update Comps method in database
+                    if (this.database && projectId) {
+                      try {
+                        const methods = this.database.getMethodsByProject(projectId);
+                        const compsMethod = methods.find((m: any) => m.method_type === 'Comps');
+                        if (compsMethod) {
+                          this.database.updateMethod(compsMethod.id, { calculated_value: compsValue });
+                          console.log('[ValuationAgent] Updated Comps calculated value:', compsValue);
+                        }
+                      } catch (error) {
+                        console.error('[ValuationAgent] Failed to update Comps value:', error);
+                      }
+                    }
+                  }
                 } else if (block.type === 'tool_use') {
                   // Agent is using a tool (Bash, Edit, etc.)
                   // Add a "tool call start" message
@@ -421,10 +480,47 @@ class ValuationAgentService {
   }
 
   /**
+   * Format project data summary for the agent
+   */
+  private formatProjectDataSummary(projectData: ProjectData): string {
+    let summary = `Project: ${projectData.name}\n`;
+
+    if (projectData.description) {
+      summary += `Description: ${projectData.description}\n`;
+    }
+
+    summary += `\nValuation Methods:\n`;
+
+    if (projectData.methods && projectData.methods.length > 0) {
+      for (const method of projectData.methods) {
+        summary += `\n- ${method.method_type} (Weight: ${method.weight})\n`;
+
+        if (method.calculated_value) {
+          summary += `  Calculated Value: $${method.calculated_value.toLocaleString()}\n`;
+        }
+
+        // Get metrics for this method
+        const methodMetrics = (projectData as any).metrics?.filter((m: any) => m.method_id === method.id) || [];
+
+        if (methodMetrics.length > 0) {
+          summary += `  Metrics:\n`;
+          for (const metric of methodMetrics) {
+            summary += `    - ${metric.metric_key}: ${metric.metric_value}\n`;
+          }
+        }
+      }
+    } else {
+      summary += `  No valuation methods configured yet.\n`;
+    }
+
+    return summary;
+  }
+
+  /**
    * Build system prompt with project context
    */
   private buildSystemPrompt(projectData: ProjectData): string {
-    return `You are a friendly and professional financial valuation expert named Claude. You specialize in enterprise valuations.
+    return `You are a friendly and professional financial valuation expert named MGX Valuation Agent. You specialize in enterprise valuations.
 
 **YOUR EXPERTISE:**
 - Discounted Cash Flow (DCF) analysis
@@ -452,9 +548,13 @@ class ValuationAgentService {
    - Method breakdown with weights
    - Key assumptions and drivers
    - Recommendations
+   - **IMPORTANT**: When presenting a final valuation, include the exact text "FINAL_VALUATION: $X" where X is the numeric value (e.g., "FINAL_VALUATION: $5000000")
 
 **PROJECT DATA:**
 ${JSON.stringify(projectData, null, 2)}
+
+**AVAILABLE DATA SUMMARY:**
+${this.formatProjectDataSummary(projectData)}
 
 **CONVERSATION STYLE:**
 - Be conversational and friendly
@@ -462,6 +562,19 @@ ${JSON.stringify(projectData, null, 2)}
 - Wait for user confirmation before proceeding to next phase
 - Show your work step-by-step
 - Ask clarifying questions if needed
+
+**IMPORTANT - SAVING CALCULATION RESULTS:**
+When you calculate valuations, include these special markers in your response to automatically save results:
+
+1. **Individual Method Results**: Include these exact formats in your text:
+   - For DCF: "DCF_VALUE: $X" or "DCF VALUATION: $X" (e.g., "DCF_VALUE: $2500000")
+   - For Comparables: "COMPS_VALUE: $X" or "COMPS VALUATION: $X" (e.g., "COMPS_VALUE: $3000000")
+
+2. **Final Combined Valuation**: "FINAL_VALUATION: $X" (e.g., "FINAL_VALUATION: $5000000")
+
+These markers will automatically update the database with your calculated values.
+Present them naturally in your response, for example:
+"Based on my calculations, the DCF_VALUE: $2500000 and the COMPS_VALUE: $3000000, leading to a FINAL_VALUATION: $2750000"
 
 **CODE EXECUTION:**
 You have access to the code_execution tool. Use it for all calculations. Example:

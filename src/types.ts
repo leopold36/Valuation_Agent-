@@ -83,7 +83,8 @@ export type TerminalMessageType =
   | 'executing'
   | 'result'
   | 'error'
-  | 'thinking';
+  | 'thinking'
+  | 'valuation_result';
 
 export interface TerminalMessage {
   id: string;
@@ -96,6 +97,7 @@ export interface TerminalMessage {
     executionTime?: number;
     success?: boolean;
     code?: string;
+    valuationValue?: number;
   };
 }
 

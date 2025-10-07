@@ -6,9 +6,11 @@ import ExecutionStatus, { ExecutionState } from './ExecutionStatus';
 
 interface MessageBubbleProps {
   message: TerminalMessage;
+  onSaveValuation?: (value: number) => void;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onSaveValuation }) => {
+  const [dismissed, setDismissed] = React.useState(false);
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', {
       hour12: false,
@@ -200,6 +202,58 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
               </div>
               <div className="text-xs text-gray-400 mt-1">
                 {formatTime(message.timestamp)}
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'valuation_result':
+        if (dismissed) return null;
+
+        const valuationValue = message.metadata?.valuationValue;
+        return (
+          <div className="flex items-start gap-2">
+            <div className="flex-shrink-0 text-xs font-medium text-gray-500 w-16 pt-1">
+              Result
+            </div>
+            <div className="flex-1">
+              <div className="px-4 py-3 rounded-lg border-2 border-green-500 bg-green-50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold text-green-800">
+                    ✓ Valuation Complete
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {formatTime(message.timestamp)}
+                  </div>
+                </div>
+
+                <div className="text-2xl font-bold text-green-900 mb-3">
+                  ${valuationValue?.toLocaleString() || 'N/A'}
+                </div>
+
+                <div className="text-sm text-gray-700 mb-3">
+                  {message.content}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (onSaveValuation && valuationValue) {
+                        onSaveValuation(valuationValue);
+                        setDismissed(true);
+                      }
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
+                  >
+                    Save to Database
+                  </button>
+                  <button
+                    onClick={() => setDismissed(true)}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded hover:bg-gray-300 transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             </div>
           </div>

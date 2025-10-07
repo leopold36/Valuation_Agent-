@@ -20,6 +20,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
   // Track unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  // MGX Weighted Valuation (calculated in real-time)
+  const [mgxValuation, setMgxValuation] = useState<number | null>(null);
+
   // DCF Form State
   const [cashFlows, setCashFlows] = useState<string>('100, 110, 121, 133, 146');
   const [discountRate, setDiscountRate] = useState<string>('0.10');
@@ -36,6 +39,25 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     loadMethods();
     loadConversationHistory();
   }, [project.id]);
+
+  // Calculate MGX weighted valuation in real-time
+  useEffect(() => {
+    const dcfMethod = methods.find(m => m.method_type === 'DCF');
+    const compsMethod = methods.find(m => m.method_type === 'Comps');
+
+    const dcfValue = dcfMethod?.calculated_value || 0;
+    const compsValue = compsMethod?.calculated_value || 0;
+    const dcfW = parseFloat(dcfWeight) || 0;
+    const compsW = parseFloat(compsWeight) || 0;
+
+    // Only calculate if we have at least one calculated value
+    if (dcfValue > 0 || compsValue > 0) {
+      const weighted = (dcfValue * dcfW) + (compsValue * compsW);
+      setMgxValuation(weighted);
+    } else {
+      setMgxValuation(null);
+    }
+  }, [methods, dcfWeight, compsWeight]);
 
   const loadConversationHistory = async () => {
     try {
@@ -74,6 +96,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       const loadedMethods = await window.electronAPI.methods.getByProject(project.id);
       setMethods(loadedMethods);
 
+      // If no methods exist, this is a new project with unsaved data
+      if (loadedMethods.length === 0) {
+        setHasUnsavedChanges(true);
+      } else {
+        // Project has saved data, mark as saved
+        setHasUnsavedChanges(false);
+      }
+
       // Load existing data into form fields
       for (const method of loadedMethods) {
         const metrics = await window.electronAPI.metrics.getByMethod(method.id);
@@ -107,6 +137,62 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       timestamp: new Date(),
       metadata
     }]);
+  };
+
+  // Handle weight adjustments with automatic balancing
+  const handleDcfWeightChange = (delta: number) => {
+    const currentDcf = parseFloat(dcfWeight) || 0.6;
+    const newDcf = Math.max(0, Math.min(1.0, currentDcf + delta));
+    const newComps = 1.0 - newDcf;
+
+    setDcfWeight(newDcf.toFixed(2));
+    setCompsWeight(newComps.toFixed(2));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleCompsWeightChange = (delta: number) => {
+    const currentComps = parseFloat(compsWeight) || 0.4;
+    const newComps = Math.max(0, Math.min(1.0, currentComps + delta));
+    const newDcf = 1.0 - newComps;
+
+    setCompsWeight(newComps.toFixed(2));
+    setDcfWeight(newDcf.toFixed(2));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSaveValuation = async (valuationValue: number) => {
+    try {
+      // Reload methods first to get latest state
+      const currentMethods = await window.electronAPI.methods.getByProject(project.id);
+
+      // Check if "Valuation Check" method already exists
+      let valuationMethod = currentMethods.find(m => m.method_type === 'Valuation Check');
+
+      if (!valuationMethod) {
+        // Create new method
+        valuationMethod = await window.electronAPI.methods.create(
+          project.id,
+          'Valuation Check',
+          0 // Weight is not used for valuation check
+        );
+      }
+
+      // Update the calculated value
+      await window.electronAPI.methods.update(valuationMethod.id, {
+        calculated_value: valuationValue
+      });
+
+      // Reload methods to update UI
+      await loadMethods();
+
+      // Confirm save to user
+      addMessage('assistant_text', `✓ Valuation of $${valuationValue.toLocaleString()} saved as "Valuation Check"`);
+
+      console.log('[ProjectDetail] Valuation saved successfully:', valuationValue);
+    } catch (error: any) {
+      console.error('Failed to save valuation:', error);
+      addMessage('error', `Failed to save valuation: ${error.message}`);
+    }
   };
 
   const saveData = async () => {
@@ -191,6 +277,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
 
       processAgentResponse(agentResponse.response);
 
+      // Reload methods to show any calculated values the agent may have saved
+      await loadMethods();
+
     } catch (error: any) {
       addMessage('error', `Agent error: ${error.message}`);
     } finally {
@@ -213,6 +302,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
       }
 
       processAgentResponse(agentResponse.response);
+
+      // Reload methods to show any calculated values the agent may have saved
+      await loadMethods();
 
     } catch (error: any) {
       addMessage('error', `Error: ${error.message}`);
@@ -259,6 +351,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           break;
         case 'thinking':
           terminalMsg.type = 'thinking';
+          break;
+        case 'valuation_result':
+          terminalMsg.type = 'valuation_result';
+          // Ensure metadata is preserved (contains valuationValue)
           break;
         default:
           terminalMsg.type = 'assistant_text';
@@ -326,15 +422,61 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           </button>
         </div>
 
+          {/* MGX Weighted Valuation Summary */}
+          {mgxValuation !== null && (
+            <div className="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-lg">
+              <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">
+                MGX Valuation
+              </div>
+              <div className="text-2xl font-bold text-blue-900 mb-2">
+                ${mgxValuation.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+              <div className="text-xs text-gray-600">
+                {methods.find(m => m.method_type === 'DCF')?.calculated_value && (
+                  <span>
+                    DCF: ${methods.find(m => m.method_type === 'DCF')?.calculated_value?.toLocaleString()} × {(parseFloat(dcfWeight) * 100).toFixed(0)}%
+                  </span>
+                )}
+                {methods.find(m => m.method_type === 'DCF')?.calculated_value && methods.find(m => m.method_type === 'Comps')?.calculated_value && (
+                  <span className="mx-1">+</span>
+                )}
+                {methods.find(m => m.method_type === 'Comps')?.calculated_value && (
+                  <span>
+                    Comps: ${methods.find(m => m.method_type === 'Comps')?.calculated_value?.toLocaleString()} × {(parseFloat(compsWeight) * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* DCF Form */}
           <div className="mb-3 p-2.5 border border-gray-200 rounded">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">DCF</h3>
-              {methods.find(m => m.method_type === 'DCF')?.calculated_value && (
-                <span className="text-xs font-bold text-green-600">
-                  Calculated: ${methods.find(m => m.method_type === 'DCF')?.calculated_value?.toLocaleString()}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">DCF</h3>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Weight:</span>
+                  <span className="text-xs font-medium text-gray-900">
+                    {(parseFloat(dcfWeight) * 100).toFixed(0)}%
+                  </span>
+                  <div className="flex flex-col">
+                    <button
+                      onClick={() => handleDcfWeightChange(0.05)}
+                      className="px-1 py-0 text-xs text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors leading-none"
+                      title="Increase by 5%"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => handleDcfWeightChange(-0.05)}
+                      className="px-1 py-0 text-xs text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors leading-none"
+                      title="Decrease by 5%"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -351,32 +493,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                    Discount Rate
-                  </label>
-                  <input
-                    type="text"
-                    value={discountRate}
-                    onChange={(e) => { setDiscountRate(e.target.value); setHasUnsavedChanges(true); }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="0.10"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                    Weight
-                  </label>
-                  <input
-                    type="text"
-                    value={dcfWeight}
-                    onChange={(e) => { setDcfWeight(e.target.value); setHasUnsavedChanges(true); }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="0.6"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-0.5">
+                  Discount Rate
+                </label>
+                <input
+                  type="text"
+                  value={discountRate}
+                  onChange={(e) => { setDiscountRate(e.target.value); setHasUnsavedChanges(true); }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="0.10"
+                />
               </div>
 
               <div>
@@ -391,18 +518,49 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                   placeholder="1500"
                 />
               </div>
+
+              {/* Calculated Valuation Display */}
+              {methods.find(m => m.method_type === 'DCF')?.calculated_value && (
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="block text-xs font-medium text-green-700 mb-0.5">
+                    Calculated Valuation
+                  </label>
+                  <div className="text-lg font-bold text-green-600">
+                    ${methods.find(m => m.method_type === 'DCF')?.calculated_value?.toLocaleString()}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Comps Form */}
-          <div className="p-2.5 border border-gray-200 rounded">
+          <div className="mb-3 p-2.5 border border-gray-200 rounded">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Comparables</h3>
-              {methods.find(m => m.method_type === 'Comps')?.calculated_value && (
-                <span className="text-xs font-bold text-green-600">
-                  Calculated: ${methods.find(m => m.method_type === 'Comps')?.calculated_value?.toLocaleString()}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Comparables</h3>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Weight:</span>
+                  <span className="text-xs font-medium text-gray-900">
+                    {(parseFloat(compsWeight) * 100).toFixed(0)}%
+                  </span>
+                  <div className="flex flex-col">
+                    <button
+                      onClick={() => handleCompsWeightChange(0.05)}
+                      className="px-1 py-0 text-xs text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors leading-none"
+                      title="Increase by 5%"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => handleCompsWeightChange(-0.05)}
+                      className="px-1 py-0 text-xs text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors leading-none"
+                      title="Decrease by 5%"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -437,35 +595,48 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                    Company {metric}
-                  </label>
-                  <input
-                    type="text"
-                    value={companyValue}
-                    onChange={(e) => { setCompanyValue(e.target.value); setHasUnsavedChanges(true); }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="100000000"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-0.5">
-                    Weight
-                  </label>
-                  <input
-                    type="text"
-                    value={compsWeight}
-                    onChange={(e) => { setCompsWeight(e.target.value); setHasUnsavedChanges(true); }}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="0.4"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-0.5">
+                  Company {metric}
+                </label>
+                <input
+                  type="text"
+                  value={companyValue}
+                  onChange={(e) => { setCompanyValue(e.target.value); setHasUnsavedChanges(true); }}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="100000000"
+                />
               </div>
+
+              {/* Calculated Valuation Display */}
+              {methods.find(m => m.method_type === 'Comps')?.calculated_value && (
+                <div className="pt-2 border-t border-gray-200">
+                  <label className="block text-xs font-medium text-green-700 mb-0.5">
+                    Calculated Valuation
+                  </label>
+                  <div className="text-lg font-bold text-green-600">
+                    ${methods.find(m => m.method_type === 'Comps')?.calculated_value?.toLocaleString()}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Valuation Check - Display Only */}
+          {methods.find(m => m.method_type === 'Valuation Check') && (
+            <div className="p-2.5 border-2 border-green-300 bg-green-50 rounded">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-green-800 uppercase tracking-wide">Valuation Check</h3>
+                <span className="text-xs text-green-600">AI Result</span>
+              </div>
+              <div className="text-2xl font-bold text-green-900">
+                ${methods.find(m => m.method_type === 'Valuation Check')?.calculated_value?.toLocaleString() || 'N/A'}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                Saved from AI Valuation Assistant
+              </div>
+            </div>
+          )}
         </div>
 
       {/* DIVIDER */}
@@ -487,6 +658,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           onSendMessage={handleSendMessage}
           isProcessing={isExecuting}
           onStartAgent={handleRunAgentValuation}
+          onSaveValuation={handleSaveValuation}
         />
       </div>
     </div>
