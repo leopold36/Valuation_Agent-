@@ -18,7 +18,7 @@ interface ProjectData {
 }
 
 interface AgentMessage {
-  type: 'text' | 'code' | 'result' | 'thinking' | 'tool_call' | 'executing' | 'valuation_result';
+  type: 'text' | 'code' | 'result' | 'thinking' | 'tool_call' | 'executing' | 'valuation_result' | 'method_valuation_result';
   content: string;
   metadata?: any;
   timestamp?: Date;
@@ -290,42 +290,24 @@ class ValuationAgentService {
                   this.persistMessage(threadId, 'assistant_text', block.text);
                   console.log('[ValuationAgent] Added text message:', block.text.substring(0, 100));
 
-                  // Check for FINAL_VALUATION marker
-                  const valuationMatch = block.text.match(/FINAL_VALUATION:\s*\$?([\d,]+)/i);
-                  if (valuationMatch) {
-                    const valuationValue = parseFloat(valuationMatch[1].replace(/,/g, ''));
-                    console.log('[ValuationAgent] Detected final valuation:', valuationValue);
-
-                    // Add a special valuation_result message
-                    const valuationMsg: AgentMessage = {
-                      type: 'valuation_result',
-                      content: 'Would you like to save this valuation to the database?',
-                      metadata: { valuationValue },
-                      timestamp: new Date()
-                    };
-                    messages.push(valuationMsg);
-                    this.persistMessage(threadId, 'valuation_result', valuationMsg.content, { valuationValue });
-                  }
-
                   // Check for method-specific valuations (DCF_VALUE, COMPS_VALUE)
                   const dcfMatch = block.text.match(/DCF[_\s](?:VALUE|VALUATION):\s*\$?([\d,]+)/i);
                   if (dcfMatch) {
                     const dcfValue = parseFloat(dcfMatch[1].replace(/,/g, ''));
                     console.log('[ValuationAgent] Detected DCF valuation:', dcfValue);
 
-                    // Update DCF method in database
-                    if (this.database && projectId) {
-                      try {
-                        const methods = this.database.getMethodsByProject(projectId);
-                        const dcfMethod = methods.find((m: any) => m.method_type === 'DCF');
-                        if (dcfMethod) {
-                          this.database.updateMethod(dcfMethod.id, { calculated_value: dcfValue });
-                          console.log('[ValuationAgent] Updated DCF calculated value:', dcfValue);
-                        }
-                      } catch (error) {
-                        console.error('[ValuationAgent] Failed to update DCF value:', error);
-                      }
-                    }
+                    // Create save prompt message for DCF
+                    const dcfMsg: AgentMessage = {
+                      type: 'method_valuation_result',
+                      content: 'Would you like to save this DCF valuation to the database?',
+                      metadata: {
+                        valuationValue: dcfValue,
+                        methodType: 'DCF'
+                      },
+                      timestamp: new Date()
+                    };
+                    messages.push(dcfMsg);
+                    this.persistMessage(threadId, 'method_valuation_result', dcfMsg.content, dcfMsg.metadata);
                   }
 
                   const compsMatch = block.text.match(/COMPS?[_\s](?:VALUE|VALUATION):\s*\$?([\d,]+)/i);
@@ -333,19 +315,18 @@ class ValuationAgentService {
                     const compsValue = parseFloat(compsMatch[1].replace(/,/g, ''));
                     console.log('[ValuationAgent] Detected Comps valuation:', compsValue);
 
-                    // Update Comps method in database
-                    if (this.database && projectId) {
-                      try {
-                        const methods = this.database.getMethodsByProject(projectId);
-                        const compsMethod = methods.find((m: any) => m.method_type === 'Comps');
-                        if (compsMethod) {
-                          this.database.updateMethod(compsMethod.id, { calculated_value: compsValue });
-                          console.log('[ValuationAgent] Updated Comps calculated value:', compsValue);
-                        }
-                      } catch (error) {
-                        console.error('[ValuationAgent] Failed to update Comps value:', error);
-                      }
-                    }
+                    // Create save prompt message for Comps
+                    const compsMsg: AgentMessage = {
+                      type: 'method_valuation_result',
+                      content: 'Would you like to save this Comparables valuation to the database?',
+                      metadata: {
+                        valuationValue: compsValue,
+                        methodType: 'Comps'
+                      },
+                      timestamp: new Date()
+                    };
+                    messages.push(compsMsg);
+                    this.persistMessage(threadId, 'method_valuation_result', compsMsg.content, compsMsg.metadata);
                   }
                 } else if (block.type === 'tool_use') {
                   // Agent is using a tool (Bash, Edit, etc.)
@@ -566,15 +547,20 @@ ${this.formatProjectDataSummary(projectData)}
 **IMPORTANT - SAVING CALCULATION RESULTS:**
 When you calculate valuations, include these special markers in your response to automatically save results:
 
-1. **Individual Method Results**: Include these exact formats in your text:
-   - For DCF: "DCF_VALUE: $X" or "DCF VALUATION: $X" (e.g., "DCF_VALUE: $2500000")
-   - For Comparables: "COMPS_VALUE: $X" or "COMPS VALUATION: $X" (e.g., "COMPS_VALUE: $3000000")
+**Individual Method Results**: Include these exact formats in your text:
+- For DCF: "DCF_VALUE: $X" or "DCF VALUATION: $X" (e.g., "DCF_VALUE: $2500000")
+- For Comparables: "COMPS_VALUE: $X" or "COMPS VALUATION: $X" (e.g., "COMPS_VALUE: $3000000")
 
-2. **Final Combined Valuation**: "FINAL_VALUATION: $X" (e.g., "FINAL_VALUATION: $5000000")
+**CRITICAL - DO NOT CALCULATE FINAL WEIGHTED VALUATION:**
+- DO NOT calculate or present a final weighted/combined valuation
+- DO NOT use the FINAL_VALUATION marker
+- Only calculate individual method values (DCF and Comparables separately)
+- The system will automatically calculate the weighted MGX Valuation based on method values and weights
+- Present individual method results clearly so the user can review and save each one
 
-These markers will automatically update the database with your calculated values.
-Present them naturally in your response, for example:
-"Based on my calculations, the DCF_VALUE: $2500000 and the COMPS_VALUE: $3000000, leading to a FINAL_VALUATION: $2750000"
+Example of correct format:
+"Based on my DCF analysis, the DCF_VALUE: $2500000. For the Comparables method, the COMPS_VALUE: $3000000."
+(The system will automatically show MGX Valuation = $2500000 × 60% + $3000000 × 40% = $2,700,000)
 
 **CODE EXECUTION:**
 You have access to the code_execution tool. Use it for all calculations. Example:

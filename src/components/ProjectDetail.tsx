@@ -160,6 +160,42 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
     setHasUnsavedChanges(true);
   };
 
+  const handleSaveMethodValuation = async (methodType: string, valuationValue: number) => {
+    try {
+      // Reload methods first to get latest state
+      const currentMethods = await window.electronAPI.methods.getByProject(project.id);
+
+      // Find the method by type
+      let method = currentMethods.find(m => m.method_type === methodType);
+
+      if (!method) {
+        // Method doesn't exist, create it with default weight
+        const defaultWeight = methodType === 'DCF' ? 0.6 : 0.4;
+        method = await window.electronAPI.methods.create(
+          project.id,
+          methodType,
+          defaultWeight
+        );
+      }
+
+      // Update the calculated value
+      await window.electronAPI.methods.update(method.id, {
+        calculated_value: valuationValue
+      });
+
+      // Reload methods to update UI
+      await loadMethods();
+
+      // Confirm save to user
+      addMessage('assistant_text', `✓ ${methodType} valuation of $${valuationValue.toLocaleString()} saved successfully`);
+
+      console.log(`[ProjectDetail] ${methodType} valuation saved successfully:`, valuationValue);
+    } catch (error: any) {
+      console.error(`Failed to save ${methodType} valuation:`, error);
+      addMessage('error', `Failed to save ${methodType} valuation: ${error.message}`);
+    }
+  };
+
   const handleSaveValuation = async (valuationValue: number) => {
     try {
       // Reload methods first to get latest state
@@ -355,6 +391,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
         case 'valuation_result':
           terminalMsg.type = 'valuation_result';
           // Ensure metadata is preserved (contains valuationValue)
+          break;
+        case 'method_valuation_result':
+          terminalMsg.type = 'method_valuation_result';
+          // Ensure metadata is preserved (contains valuationValue and methodType)
           break;
         default:
           terminalMsg.type = 'assistant_text';
@@ -659,6 +699,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({ project, onBack }) => {
           isProcessing={isExecuting}
           onStartAgent={handleRunAgentValuation}
           onSaveValuation={handleSaveValuation}
+          onSaveMethodValuation={handleSaveMethodValuation}
         />
       </div>
     </div>
